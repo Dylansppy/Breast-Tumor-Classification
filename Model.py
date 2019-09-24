@@ -3,74 +3,67 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
-import numpy as np
 import matplotlib.pyplot as plt
 
 
-from preprocessing import list_pictures
-import cv2
+import cv2 as cv
 import os, time
 import pandas as pd
+import numpy as np
 from keras.preprocessing import image
+from preprocessing import list_pictures
 from keras.models import Model
 from keras.applications.xception import Xception
 from keras.applications.vgg16 import VGG16
 from keras.applications.vgg16 import preprocess_input
 from keras.applications.vgg19 import VGG19
-from keras.applications.vgg19 import preprocess_input
+#from keras.applications.vgg19 import preprocess_input
+
+#Organizing the dataset
+data_dir = os.path.join('..', 'data', 'breast_processed')
+
+
+# Define a function to extract features using pre-trained network
+def feature_extraction(model, img_path, magnification, input_shape):
+    features = []
+    labels = []
+    for img_dir in list_pictures(img_path, magnification):
+        img = image.load_img(img_dir, target_size=input_shape)
+        x = image.img_to_array(img)
+        x = np.expand_dims(x, axis=0)
+        x = preprocess_input(x)
+        feature = model.predict(x)
+        feature_array = np.array(feature, dtype=float)
+        features.append(feature_array)
+        directory, file_name = os.path.split(img_dir)
+        if file_name.split('_')[1] == 'B':
+            label = 0
+        elif file_name.split('_')[1] == 'M':
+            label = 1
+        labels.append(label)
+    X = np.asarray(features)
+    y = np.asarray(labels)
+    np.save(os.path.join('..', 'data', 'features', magnification, 'X.npy'), X)
+    np.save(os.path.join('..', 'data', 'features', magnification, 'y.npy'), y)
 
 # Extract features with VGG16, the default input size for this model is 224x224.
-img_path = os.path.join('..', 'data', 'breast_processed')
-features2 = []
 model2 = VGG16(weights='imagenet', include_top=False)
+img_rows,img_cols= 224, 224
+input_shape = (img_rows, img_cols)
+magnification_factors = ['40', '100', '200', '400']
+for factor in magnification_factors:
+    feature_extraction(model2, data_dir, factor, input_shape)
 
-def feature_extraction(model, ima_path)
-    for img_dir in list_pictures(img_path):
-        img = cv2.imread(img_dir)
-        img = cv2.resize(img, (224, 224))
-        #x = image.img_to_array(img)
-        #x_list.append(img)
-        x = np.expand_dims(img, axis=0)
-        x = preprocess_input(x)
-        directory, file_name = os.path.split(img_dir)
-        label = file_name.split('_')[1]
-        if label == 'M':
-            y = 1
-        else:
-            y = 0
-        #x = np.expand_dims(x, axis=0)
-        #x = preprocess_input(x)
-        #x_df = pd.DataFrame(x_list)
-        #y_df = pd.DataFrame(y_list)
-        feature = model.predict(x)
-        features2.append(feature)
-    pd.DataFrame(features2)
+
+X_train, y_train = get_data('dataset2-master/images/TRAIN/')
+X_test, y_test = get_data('dataset2-master/images/TEST/')
+
 
 # Extract features with Xception, the default input size for this model is 299x299.
 img_path = os.path.join('..', 'data', 'breast_processed')
 features = []
 model1 = Xception(weights='imagenet', include_top=False)
-for img_dir in list_pictures(img_path):
-    img = cv2.imread(img_dir)
-    img = cv2.resize(img, (299, 299))
-    #x = image.img_to_array(img)
-    #x_list.append(img)
-    x = np.expand_dims(img, axis=0)
-    x = preprocess_input(x)
-    directory, file_name = os.path.split(img_dir)
-    label = file_name.split('_')[1]
-    if label == 'M':
-        y = 1
-    else:
-        y = 0
-    y_list.append(y)
-    #x = np.expand_dims(x, axis=0)
-    #x = preprocess_input(x)
-    #x_df = pd.DataFrame(x_list)
-    #y_df = pd.DataFrame(y_list)
-    feature = model1.predict(x)
-    features.append(feature)
-pd.DataFrame(features)
+
 
 # Extract features from an arbitrary intermediate layer with VGG19, the default input size for this model is 224x224
 img_path = os.path.join('..', 'data', 'breast_processed')
