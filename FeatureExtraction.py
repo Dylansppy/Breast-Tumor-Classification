@@ -4,10 +4,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
-%matplotlib inline
+#%matplotlib inline
 
 
-import cv2 as cv
+import cv2
 import os, time
 import pandas as pd
 import numpy as np
@@ -15,25 +15,40 @@ from keras.preprocessing import image
 from preprocessing import list_pictures
 from keras.models import Model
 from keras.applications.xception import Xception
+from keras.applications.xception import preprocess_input as xception_preprocess_input
 from keras.applications.vgg16 import VGG16
-from keras.applications.vgg16 import preprocess_input
+from keras.applications.vgg16 import preprocess_input as vgg16_preprocess_input
 from keras.applications.vgg19 import VGG19
-#from keras.applications.vgg19 import preprocess_input
+from keras.applications.vgg19 import preprocess_input as vgg19_preprocess_input
+from multiprocessing import Pool
 
 #Organizing the dataset
-data_dir = os.path.join('..', 'data', 'breast_processed')
+train_data_dir = os.path.join('..', 'data', 'train_processed')
+test_data_dir = os.path.join('..', 'data', 'test_processed')
+magnification_factors = ['40', '100', '200', '400']
+
+model1 = Xception(weights='imagenet', include_top=False) #imports the Xception model and discards the last classification layer.
+model2 = VGG16(weights='imagenet', include_top=False) #imports the VGG16 model and discards the last classification layer.
+base_model = VGG19(weights='imagenet')
+model3 = Model(inputs=base_model.input, outputs=base_model.get_layer('block4_pool').output) #imports the VGG19 model and discards the last classification layer.
+models = {'xception': (model1, xception_preprocess_input),
+          'vgg16': (model2, vgg16_preprocess_input),
+          'vgg19': (model3, vgg19_preprocess_input)
+          }
 
 
 # Define a function to extract features using pre-trained network
-def feature_extraction(model, img_path, magnification, input_shape):
+def feature_extraction(model_name, img_path, magnification_factor, input_shape, out_path):
     features = []
     labels = []
-    for img_dir in list_pictures(img_path, magnification):
+    for img_dir in list_pictures(img_path, magnification_factor):
         img = image.load_img(img_dir, target_size=input_shape)
-        x = image.img_to_array(img)
+        x = image.img_to_array(img) # (rows, columns. channels)
+        # The network expects one or more images as input; that means the input array will need to be 4-dimensional:
+        # samples, rows, columns, and channels.
         x = np.expand_dims(x, axis=0)
-        x = preprocess_input(x)
-        feature = model.predict(x)
+        x = models[model_name][1](x)
+        feature = models[model_name][0].predict(x)
         feature_array = np.array(feature, dtype=float)
         features.append(feature_array)
         directory, file_name = os.path.split(img_dir)
@@ -44,159 +59,36 @@ def feature_extraction(model, img_path, magnification, input_shape):
         labels.append(label)
     X = np.asarray(features)
     y = np.asarray(labels)
-    np.save(os.path.join('..', 'data', 'features', magnification, 'X.npy'), X)
-    np.save(os.path.join('..', 'data', 'features', magnification, 'y.npy'), y)
+    np.save(os.path.join(out_path, magnification_factor, 'X.npy'), X)
+    np.save(os.path.join(out_path, magnification_factor, 'y.npy'), y)
 
-# Extract features with VGG16, the default input size for this model is 224x224.
-model2 = VGG16(weights='imagenet', include_top=False)
-img_rows,img_cols= 224, 224
-input_shape = (img_rows, img_cols)
-magnification_factors = ['40', '100', '200', '400']
-for factor in magnification_factors:
-    feature_extraction(model2, data_dir, factor, input_shape)
-
-
-
-
-
-
-X_train, y_train = get_data('dataset2-master/images/TRAIN/')
-X_test, y_test = get_data('dataset2-master/images/TEST/')
-
+# Deply feature extraction
+def feature_extraction_deploy(model_name, input_shape, train_output_dir, test_output_dir,
+                              train_input_dir=train_data_dir, test_input_dir=test_data_dir):
+    for i in range(4):
+        feature_extraction(model_name, train_input_dir, magnification_factors[i], input_shape, train_output_dir)
+        feature_extraction(model_name, test_input_dir, magnification_factors[i], input_shape, test_output_dir)
 
 # Extract features with Xception, the default input size for this model is 299x299.
-img_path = os.path.join('..', 'data', 'breast_processed')
-features = []
-model1 = Xception(weights='imagenet', include_top=False)
+img_rows, img_cols= 299, 299
+input_shape = (img_rows, img_cols)
+out_path_xception_train = os.path.join('..', 'data', 'features_xception', 'Train')
+out_path_xception_test = os.path.join('..', 'data', 'features_xception', 'Test')
+feature_extraction_deploy('xception', input_shape, out_path_xception_train, out_path_xception_test)
+
+# Extract features with VGG16, the default input size for this model is 224x224.
+img_rows, img_cols= 224, 224
+input_shape = (img_rows, img_cols)
+out_path_vgg16_train = os.path.join('..', 'data', 'features_vgg16', 'Train')
+out_path_vgg16_test = os.path.join('..', 'data', 'features_vgg16', 'Test')
+feature_extraction_deploy('vgg16', input_shape, out_path_vgg16_train, out_path_vgg16_test)
 
 
 # Extract features from an arbitrary intermediate layer with VGG19, the default input size for this model is 224x224
-img_path = os.path.join('..', 'data', 'breast_processed')
-img = image.load_img(img_path, target_size=(224, 224))
-x = image.img_to_array(img)
-x = np.expand_dims(x, axis=0)
-x = preprocess_input(x)
-
-base_model = VGG19(weights='imagenet')
-model3 = Model(inputs=base_model.input, outputs=base_model.get_layer('block4_pool').output)
-block4_pool_features = model3.predict(x)
-
-#Function to train the model
-def train_model(model, criterion, optimizer, scheduler, num_epochs=10):
-    since = time.time()
-    best_model_wts = copy.deepcopy(model.state_dict())
-    best_acc = 0.0
-
-    for epoch in range(1, num_epochs+1):
-        print('Epoch {}/{}'.format(epoch, num_epochs))
-        print('-' * 10)
-
-        # Each epoch has a training and validation phase
-        for phase in ['train', 'valid']:
-            if phase == 'train':
-                scheduler.step()
-                model.train()  # Set model to training mode
-            else:
-                model.eval()   # Set model to evaluate mode
-
-            running_loss = 0.0
-            running_corrects = 0
-
-            # Iterate over data.
-            for inputs, labels in dataloaders[phase]:
-                inputs, labels = inputs.to(device), labels.to(device)
-
-                # zero the parameter gradients
-                optimizer.zero_grad()
-
-                # forward
-                # track history if only in train
-                with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
-                    _, preds = torch.max(outputs, 1)
-
-                    # backward + optimize only if in training phase
-                    if phase == 'train':
-                        loss.backward()
-                        optimizer.step()
-
-                # statistics
-                running_loss += loss.item() * inputs.size(0)
-                running_corrects += torch.sum(preds == labels.data)
-
-            epoch_loss = running_loss / dataset_sizes[phase]
-            epoch_acc = running_corrects.double() / dataset_sizes[phase]
-
-            print('{} Loss: {:.4f} Acc: {:.4f}'.format(
-                phase, epoch_loss, epoch_acc))
-
-            # deep copy the model
-            if phase == 'valid' and epoch_acc > best_acc:
-                best_acc = epoch_acc
-                best_model_wts = copy.deepcopy(model.state_dict())
-
-        print()
-
-    time_elapsed = time.time() - since
-    print('Training complete in {:.0f}m {:.0f}s'.format(
-        time_elapsed // 60, time_elapsed % 60))
-    print('Best valid accuracy: {:4f}'.format(best_acc))
-
-    # load best model weights
-    model.load_state_dict(best_model_wts)
-    return model
-
-# Train a model with a pre-trained network
-num_epochs = 10
-if use_gpu:
-    print ("Using GPU: "+ str(use_gpu))
-    model = model.cuda()
-
-# NLLLoss because our output is LogSoftmax
-criterion = nn.NLLLoss()
-
-# Adam optimizer with a learning rate
-#optimizer = optim.Adam(model.fc.parameters(), lr=0.005)
-optimizer = optim.SGD(model.fc.parameters(), lr = .0006, momentum=0.9)
-# Decay LR by a factor of 0.1 every 5 epochs
-exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+img_rows, img_cols= 224, 224
+input_shape = (img_rows, img_cols)
+out_path_vgg19_train = os.path.join('..', 'data', 'features_vgg19', 'Train')
+out_path_vgg19_test = os.path.join('..', 'data', 'features_vgg19', 'Test')
+feature_extraction_deploy('vgg19', input_shape, out_path_vgg19_train, out_path_vgg19_test)
 
 
-model_ft = train_model(model, criterion, optimizer, exp_lr_scheduler, num_epochs=10)
-
-
-# Do validation on the test set
-def test(model, dataloaders, device):
-    model.eval()
-    accuracy = 0
-
-    model.to(device)
-
-    for images, labels in dataloaders['valid']:
-        images = Variable(images)
-        labels = Variable(labels)
-        images, labels = images.to(device), labels.to(device)
-
-        output = model.forward(images)
-        ps = torch.exp(output)
-        equality = (labels.data == ps.max(1)[1])
-        accuracy += equality.type_as(torch.FloatTensor()).mean()
-
-        print("Testing Accuracy: {:.3f}".format(accuracy / len(dataloaders['valid'])))
-
-test(model, dataloaders, device)
-
-
-# Save the checkpoint
-model.class_to_idx = dataloaders['train'].dataset.class_to_idx
-model.epochs = num_epochs
-checkpoint = {'input_size': [3, 224, 224],
-                 'batch_size': dataloaders['train'].batch_size,
-                  'output_size': 2,
-                  'state_dict': model.state_dict(),
-                  'data_transforms': data_transforms,
-                  'optimizer_dict':optimizer.state_dict(),
-                  'class_to_idx': model.class_to_idx,
-                  'epoch': model.epochs}
-torch.save(checkpoint, '8960_checkpoint.pth')
