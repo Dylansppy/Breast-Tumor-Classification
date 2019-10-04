@@ -45,27 +45,32 @@ def rgb_to_hsv(image):
     #res = cv2.bitwise_and(image, image, mask= mask)
     return hsv
 
+def img_augmentation(img) -> List:
+    pass
 
 def preprocessing(image_dirs, target_dir, magnification_factor, extension):
     for image_dir in tqdm(list_pictures(image_dirs, magnification_factor, extension)):
         image = cv2.imread(image_dir)
         image = gaussian_blur(image)  #460*700*3
         # transfer the image from rgb to gray for histogram equlization
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        equ = cv2.equalizeHist(gray)  #460*700
-        equ = np.expand_dims(equ, axis=2)  #460*700*1
+        # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # equ = cv2.equalizeHist(gray)  #460*700
+        # equ = np.expand_dims(equ, axis=2)  #460*700*1
         # transfer the image from rgb to hsv
         hsv = rgb_to_hsv(image)   #460*700*3
-        # save the pre-processed image 
+        # save the pre-processed image
         directory, file_name = os.path.split(image_dir)
-        #sub_directory = directory.split(os.sep)[4]
+        # sub_directory = directory.split(os.sep)[4]
         if not os.path.exists(target_dir):
             os.makedirs(target_dir)
         #cv2.imwrite(os.path.join(target_dir, file_name), image)
         #cv2.imwrite(os.path.join(target_dir, file_name), hsv)
         #cv2.imwrite(os.path.join(target_dir, file_name), equ)
-        img_rgb_hsv_equ = np.concatenate((image, hsv, equ), axis=2) # 460*700*7
-        np.save(os.path.join(target_dir, file_name + '.npy'), img_rgb_hsv_equ)
+        images_aug = img_augmentation(image)
+        hsvs_aug = img_augmentation(hsv)
+        for i, (image_aug, hsv_aug) in enumerate(zip(images_aug, hsvs_aug)):
+            img_rgb_hsv = np.concatenate((image_aug, hsv_aug), axis=0) # 920*700*3
+            np.save(os.path.join(target_dir, file_name + '-' + str(i) + '.npy'), img_rgb_hsv)
         #k = cv2.waitKey(1005) & 0xFF
         #if k == 27:
         #    break

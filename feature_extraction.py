@@ -36,6 +36,8 @@ def feature_extraction(model_name, img_path, magnification_factor, input_shape, 
     for img_dir in list_pictures(img_path, magnification_factor, ext='.npy'):
         x = np.load(img_dir) # 460*700*7
         x = cv2.resize(x, dsize=input_shape, interpolation=cv2.INTER_CUBIC) #(input_size, 7)
+        # img = image.load_img(img_dir, target_size=input_shape)
+        # x = image.img_to_array(img)  # (rows, columns. channels)
         # The network expects one or more images as input; that means the input array will need to be 4-dimensional:
         # samples, rows, columns, and channels.  channel number of 3 is required for pre-trained model
         x = np.expand_dims(x, axis=0)
@@ -74,7 +76,8 @@ def feature_extraction_deploy(model_name, input_shape, output_dir, input_dir=ima
                             magnification_factors[i],
                             input_shape,
                             output_dir
-                ))
+                            )
+                      )
     p.close()
     p.join()
     print('All processes done.')
